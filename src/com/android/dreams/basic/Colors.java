@@ -27,6 +27,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Configuration;
 import android.graphics.drawable.Drawable;
+import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.net.Uri;
 import android.os.BatteryManager;
@@ -97,11 +98,21 @@ public class Colors extends Dream {
                                   1f, -1f, 0f,   // bottom right
                                   1f,  1f, 0f }; // top right
 
-        private short drawOrder[] = { 0, 1, 2, 0, 2, 3 }; // order to draw vertices
-
+        private short drawOrder[] = { 0, 1, 2, 0, 2, 3 }; // order to draw vertices (CCW)
+        
+        private final float HUES[] = { // reverse order due to CCW winding
+                60,  // yellow
+                120, // green
+                343, // red
+                200, // blue
+        };
+        
         private final int vertexCount = squareCoords.length / COORDS_PER_VERTEX;
         private final int vertexStride = COORDS_PER_VERTEX * 4; // bytes per vertex
 
+        private float cornerFrequencies[] = new float[vertexCount];
+        private int cornerRotation;
+        
         final int COLOR_PLANES_PER_VERTEX = 4;
         private final int colorStride = COLOR_PLANES_PER_VERTEX * 4; // bytes per vertex
 
@@ -109,6 +120,10 @@ public class Colors extends Dream {
         float color[] = { 0.63671875f, 0.76953125f, 0.22265625f, 1.0f };
 
         public Square() {
+            for (int i=0; i<vertexCount; i++) {
+                cornerFrequencies[i] = 1f + (float)(Math.random() * 5); 
+            }
+            cornerRotation = (int)(Math.random() * vertexCount);
             // initialize vertex byte buffer for shape coordinates
             ByteBuffer bb = ByteBuffer.allocateDirect(
             // (# of coordinate values * 4 bytes per float)
@@ -143,6 +158,7 @@ public class Colors extends Dream {
             GLES20.glLinkProgram(mProgram);                  // create OpenGL program executables
         }
 
+        final float[] _tmphsv = new float[3];
         public void draw() {
             // Add program to OpenGL environment
             GLES20.glUseProgram(mProgram);
@@ -159,14 +175,19 @@ public class Colors extends Dream {
                                          vertexStride, vertexBuffer);
 
             // same thing for colors
-            long now = SystemClock.uptimeMillis() % 1000L;
+            long now = SystemClock.uptimeMillis();
             colorBuffer.clear();
+            final float t = (float)now / 4000f; // set the base period to 4sec
+//            android.util.Slog.v("Colors", "t=" + t);
             for(int i=0; i<vertexCount; i++) {
-                float r, g, b; 
-                r = g = b = (float) Math.sin(6.28f * (float)now / 1000f) * 0.5f + 0.5f;
-                colorBuffer.put(i==0 ? r : 0f);
-                colorBuffer.put(((i&1) != 0) ? g : 0f);
-                colorBuffer.put(i==2 ? b : 0f);
+                final float freq = (float) Math.sin(2 * Math.PI * t / cornerFrequencies[i]);
+                _tmphsv[0] = HUES[(i + cornerRotation) % vertexCount];
+                _tmphsv[1] = 1f;
+                _tmphsv[2] = freq * 0.25f + 0.75f;
+                final int c = Color.HSVToColor(_tmphsv);
+                colorBuffer.put((float)((c & 0xFF0000) >> 16) / 0xFF);
+                colorBuffer.put((float)((c & 0x00FF00) >> 8) / 0xFF);
+                colorBuffer.put((float)(c & 0x0000FF) / 0xFF);
                 colorBuffer.put(/*a*/ 1f);
             }
             colorBuffer.position(0);
