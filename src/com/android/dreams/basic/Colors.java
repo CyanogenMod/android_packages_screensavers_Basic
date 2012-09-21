@@ -279,7 +279,7 @@ public class Colors extends Dream {
     public void onAttachedToWindow() {
         super.onAttachedToWindow();
         
-        lightsOut(); // lights out, fullscreen
+        setFullscreen(true);
         setInteractive(false);
         
         gl = new TheySaidIHadToHaveAGLSurfaceView(Colors.this);
