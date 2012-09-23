@@ -16,53 +16,114 @@
 
 package com.android.dreams.basic;
 
-import android.animation.Animator;
-import android.opengl.GLSurfaceView;
-import android.animation.AnimatorSet;
-import android.animation.ObjectAnimator;
-import android.animation.TimeInterpolator;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.res.Configuration;
-import android.graphics.drawable.Drawable;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
-import android.net.Uri;
-import android.os.BatteryManager;
-import android.os.Handler;
-import android.provider.Settings;
+import android.graphics.SurfaceTexture;
 import android.service.dreams.Dream;
 import android.util.Log;
-import android.view.MotionEvent;
-import android.view.View;
-import android.view.WindowManager;
-import android.view.animation.AccelerateInterpolator;
-import android.view.animation.DecelerateInterpolator;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import android.content.SharedPreferences;
-import android.preference.PreferenceManager;
-import android.widget.TextView;
+import android.view.Choreographer;
+import android.view.Choreographer.FrameCallback;
+import android.view.TextureView;
+import android.os.Looper;
 import android.os.SystemClock;
 
+import javax.microedition.khronos.egl.EGL10;
 import javax.microedition.khronos.egl.EGLConfig;
-import javax.microedition.khronos.opengles.GL10;
-
-import android.opengl.GLES20;
-import android.opengl.GLSurfaceView;
+import javax.microedition.khronos.egl.EGLContext;
+import javax.microedition.khronos.egl.EGLDisplay;
+import javax.microedition.khronos.egl.EGLSurface;
+import javax.microedition.khronos.opengles.GL;
+import android.opengl.GLUtils;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
 
-public class Colors extends Dream {
+import static android.opengl.GLES20.*;
+
+public class Colors extends Dream implements TextureView.SurfaceTextureListener {
+    static final String TAG = Colors.class.getSimpleName();
+    static final boolean DEBUG = true;
+    public static final void LOG(String fmt, Object... args) {
+        if (!DEBUG) return;
+        Log.v(TAG, String.format(fmt, args));
+    }
+
     // It's so easy to use OpenGLES 2.0!
-    GLSurfaceView gl;
+    private EGL10 mEgl;
+    private EGLDisplay mEglDisplay;
+    private EGLConfig mEglConfig;
+    private EGLContext mEglContext;
+    private EGLSurface mEglSurface;
+    private SurfaceTexture mSurface;
+    private GL mGL;
+
+    static final int EGL_CONTEXT_CLIENT_VERSION = 0x3098;
+    static final int EGL_OPENGL_ES2_BIT = 4;
+
+    volatile boolean mStop = false;
+
     Square mSquare;
+    TextureView mTextureView;
+
+    private long mLastFrameTime;
+    private int mFrameNum = 0;
+
+    private FrameCallback mFrameCallback = new Choreographer.FrameCallback() {
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            if (mStop) {
+                Looper.myLooper().quit();
+                return;
+            }
+
+            if (mSquare == null) {
+                initGL();
+
+                mSquare = new Square();
+                glClearColor(1f, 0f, 0f, 1.0f);
+
+                if (DEBUG) {
+                    mLastFrameTime = frameTimeNanos;
+                }
+            }
+
+            checkCurrent();
+
+            glViewport(0, 0, mWidth, mHeight);
+
+            if (DEBUG) {
+                mFrameNum ++;
+                final long t2 = frameTimeNanos;
+                final long dt = t2-mLastFrameTime;
+                final int fps = (int) (1e9f/dt);
+                if (0 == (mFrameNum % 10)) {
+                    LOG("frame %d fps=%d", mFrameNum, fps);
+                }
+                if (fps < 40) {
+                    LOG("JANK! (%d ms)", dt);
+                }
+                mLastFrameTime = t2;
+            }
+
+            glClear(GL_COLOR_BUFFER_BIT);
+            checkGlError();
+
+            mSquare.draw();
+
+            if (!mEgl.eglSwapBuffers(mEglDisplay, mEglSurface)) {
+                throw new RuntimeException("Cannot swap buffers");
+            }
+            checkEglError();
+
+            mChoreographer.postFrameCallback(mFrameCallback);
+        }
+    };
+
+    private int mHeight;
+
+    private int mWidth;
+    private Choreographer mChoreographer;
 
     class Square {
         // Straight from the API guide
@@ -99,20 +160,20 @@ public class Colors extends Dream {
                                   1f,  1f, 0f }; // top right
 
         private short drawOrder[] = { 0, 1, 2, 0, 2, 3 }; // order to draw vertices (CCW)
-        
+
         private final float HUES[] = { // reverse order due to CCW winding
                 60,  // yellow
                 120, // green
                 343, // red
                 200, // blue
         };
-        
+
         private final int vertexCount = squareCoords.length / COORDS_PER_VERTEX;
         private final int vertexStride = COORDS_PER_VERTEX * 4; // bytes per vertex
 
         private float cornerFrequencies[] = new float[vertexCount];
         private int cornerRotation;
-        
+
         final int COLOR_PLANES_PER_VERTEX = 4;
         private final int colorStride = COLOR_PLANES_PER_VERTEX * 4; // bytes per vertex
 
@@ -121,7 +182,7 @@ public class Colors extends Dream {
 
         public Square() {
             for (int i=0; i<vertexCount; i++) {
-                cornerFrequencies[i] = 1f + (float)(Math.random() * 5); 
+                cornerFrequencies[i] = 1f + (float)(Math.random() * 5);
             }
             cornerRotation = (int)(Math.random() * vertexCount);
             // initialize vertex byte buffer for shape coordinates
@@ -132,7 +193,7 @@ public class Colors extends Dream {
             vertexBuffer = bb.asFloatBuffer();
             vertexBuffer.put(squareCoords);
             vertexBuffer.position(0);
-            
+
             bb = ByteBuffer.allocateDirect(vertexCount * colorStride);
             bb.order(ByteOrder.nativeOrder());
             colorBuffer = bb.asFloatBuffer();
@@ -146,39 +207,36 @@ public class Colors extends Dream {
             drawListBuffer.put(drawOrder);
             drawListBuffer.position(0);
 
-            // prepare shaders and OpenGL program
-            int vertexShader = loadShader(GLES20.GL_VERTEX_SHADER,
-                                                       vertexShaderCode);
-            int fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER,
-                                                         fragmentShaderCode);
+            mProgram = buildProgram(vertexShaderCode, fragmentShaderCode);
 
-            mProgram = GLES20.glCreateProgram();             // create empty OpenGL Program
-            GLES20.glAttachShader(mProgram, vertexShader);   // add the vertex shader to program
-            GLES20.glAttachShader(mProgram, fragmentShader); // add the fragment shader to program
-            GLES20.glLinkProgram(mProgram);                  // create OpenGL program executables
+            // Add program to OpenGL environment
+            glUseProgram(mProgram);
+            checkGlError("glUseProgram(" + mProgram + ")");
+
+            // get handle to vertex shader's a_position member
+            mPositionHandle = glGetAttribLocation(mProgram, "a_position");
+            checkGlError("glGetAttribLocation(a_position)");
+
+            // Enable a handle to the triangle vertices
+            glEnableVertexAttribArray(mPositionHandle);
+
+            // Prepare the triangle coordinate data
+            glVertexAttribPointer(mPositionHandle, COORDS_PER_VERTEX,
+                    GL_FLOAT, false,
+                    vertexStride, vertexBuffer);
+
+            mColorHandle = glGetAttribLocation(mProgram, "a_color");
+            checkGlError("glGetAttribLocation(a_color)");
+            glEnableVertexAttribArray(mColorHandle);
+            checkGlError("glEnableVertexAttribArray");
         }
 
         final float[] _tmphsv = new float[3];
         public void draw() {
-            // Add program to OpenGL environment
-            GLES20.glUseProgram(mProgram);
-
-            // get handle to vertex shader's a_position member
-            mPositionHandle = GLES20.glGetAttribLocation(mProgram, "a_position");
-
-            // Enable a handle to the triangle vertices
-            GLES20.glEnableVertexAttribArray(mPositionHandle);
-
-            // Prepare the triangle coordinate data
-            GLES20.glVertexAttribPointer(mPositionHandle, COORDS_PER_VERTEX,
-                                         GLES20.GL_FLOAT, false,
-                                         vertexStride, vertexBuffer);
-
             // same thing for colors
             long now = SystemClock.uptimeMillis();
             colorBuffer.clear();
-            final float t = (float)now / 4000f; // set the base period to 4sec
-//            android.util.Slog.v("Colors", "t=" + t);
+            final float t = now / 4000f; // set the base period to 4sec
             for(int i=0; i<vertexCount; i++) {
                 final float freq = (float) Math.sin(2 * Math.PI * t / cornerFrequencies[i]);
                 _tmphsv[0] = HUES[(i + cornerRotation) % vertexCount];
@@ -191,102 +249,240 @@ public class Colors extends Dream {
                 colorBuffer.put(/*a*/ 1f);
             }
             colorBuffer.position(0);
-            mColorHandle = GLES20.glGetAttribLocation(mProgram, "a_color");
-            checkGlError("glGetAttribLocation");
-            GLES20.glEnableVertexAttribArray(mColorHandle);
-            checkGlError("glEnableVertexAttribArray");
-            GLES20.glVertexAttribPointer(mColorHandle, COLOR_PLANES_PER_VERTEX,
-                    GLES20.GL_FLOAT, false,
+            glVertexAttribPointer(mColorHandle, COLOR_PLANES_PER_VERTEX,
+                    GL_FLOAT, false,
                     colorStride, colorBuffer);
             checkGlError("glVertexAttribPointer");
 
             // Draw the triangle
-            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_FAN, 0, vertexCount);
-
-            // Disable vertex array
-            GLES20.glDisableVertexAttribArray(mPositionHandle);
-            GLES20.glDisableVertexAttribArray(mColorHandle);
-        }
-
-        public int loadShader(int type, String shaderCode){
-
-            // create a vertex shader type (GLES20.GL_VERTEX_SHADER)
-            // or a fragment shader type (GLES20.GL_FRAGMENT_SHADER)
-            int shader = GLES20.glCreateShader(type);
-
-            // add the source code to the shader and compile it
-            GLES20.glShaderSource(shader, shaderCode);
-            GLES20.glCompileShader(shader);
-
-            return shader;
-        }
-
-        /**
-         * Utility method for debugging OpenGL calls. Provide the name of the call
-         * just after making it:
-         *
-         * <pre>
-         * mColorHandle = GLES20.glGetUniformLocation(mProgram, "vColor");
-         * MyGLRenderer.checkGlError("glGetUniformLocation");</pre>
-         *
-         * If the operation is not successful, the check throws an error.
-         *
-         * @param glOperation - Name of the OpenGL call to check.
-         */
-        public void checkGlError(String glOperation) {
-            int error;
-            while ((error = GLES20.glGetError()) != GLES20.GL_NO_ERROR) {
-                Log.e("GL", glOperation + ": glError " + error);
-                throw new RuntimeException(String.format("%s: glError 0x%04x", glOperation, error));
-            }
+            glDrawArrays(GL_TRIANGLE_FAN, 0, vertexCount);
         }
     }
 
-    private class ColorsRenderer implements GLSurfaceView.Renderer {
-        public void onSurfaceCreated(GL10 unused, EGLConfig config) {
-            mSquare = new Square();
-            GLES20.glClearColor(0f, 0f, 0f, 1.0f);
+    private static int buildProgram(String vertex, String fragment) {
+        int vertexShader = buildShader(vertex, GL_VERTEX_SHADER);
+        if (vertexShader == 0) return 0;
+
+        int fragmentShader = buildShader(fragment, GL_FRAGMENT_SHADER);
+        if (fragmentShader == 0) return 0;
+
+        int program = glCreateProgram();
+        glAttachShader(program, vertexShader);
+        checkGlError();
+
+        glAttachShader(program, fragmentShader);
+        checkGlError();
+
+        glLinkProgram(program);
+        checkGlError();
+
+        int[] status = new int[1];
+        glGetProgramiv(program, GL_LINK_STATUS, status, 0);
+        if (status[0] != GL_TRUE) {
+            String error = glGetProgramInfoLog(program);
+            Log.d(TAG, "Error while linking program:\n" + error);
+            glDeleteShader(vertexShader);
+            glDeleteShader(fragmentShader);
+            glDeleteProgram(program);
+            return 0;
         }
 
-        public void onDrawFrame(GL10 unused) {
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
-
-            mSquare.draw();
-        }
-
-        public void onSurfaceChanged(GL10 unused, int width, int height) {
-            GLES20.glViewport(0, 0, width, height);
-        }
+        return program;
     }
 
+    private static int buildShader(String source, int type) {
+        int shader = glCreateShader(type);
+
+        glShaderSource(shader, source);
+        checkGlError();
+
+        glCompileShader(shader);
+        checkGlError();
+
+        int[] status = new int[1];
+        glGetShaderiv(shader, GL_COMPILE_STATUS, status, 0);
+        if (status[0] != GL_TRUE) {
+            String error = glGetShaderInfoLog(shader);
+            Log.d(TAG, "Error while compiling shader:\n" + error);
+            glDeleteShader(shader);
+            return 0;
+        }
+
+        return shader;
+    }
     @Override
     public void onStart() {
         super.onStart();
     }
 
-    class TheySaidIHadToHaveAGLSurfaceView extends GLSurfaceView {
-
-        public TheySaidIHadToHaveAGLSurfaceView(Context context){
-            super(context);
-
-            setEGLContextClientVersion(2);
-
-            setRenderer(new ColorsRenderer());
+    private void checkEglError() {
+        int error = mEgl.eglGetError();
+        if (error != EGL10.EGL_SUCCESS) {
+            Log.w(TAG, "EGL error = 0x" + Integer.toHexString(error));
         }
+    }
+
+    private static void checkGlError() {
+        checkGlError("");
+    }
+
+    private static void checkGlError(String what) {
+        int error = glGetError();
+        if (error != GL_NO_ERROR) {
+            Log.w(TAG, "GL error: (" + what + ") = 0x" + Integer.toHexString(error));
+        }
+    }
+
+    private void finishGL() {
+        mEgl.eglDestroyContext(mEglDisplay, mEglContext);
+        mEgl.eglDestroySurface(mEglDisplay, mEglSurface);
+    }
+
+    private void checkCurrent() {
+        if (!mEglContext.equals(mEgl.eglGetCurrentContext()) ||
+                !mEglSurface.equals(mEgl.eglGetCurrentSurface(EGL10.EGL_DRAW))) {
+            if (!mEgl.eglMakeCurrent(mEglDisplay, mEglSurface, mEglSurface, mEglContext)) {
+                throw new RuntimeException("eglMakeCurrent failed "
+                        + GLUtils.getEGLErrorString(mEgl.eglGetError()));
+            }
+        }
+    }
+
+    private void initGL() {
+        mEgl = (EGL10) EGLContext.getEGL();
+
+        mEglDisplay = mEgl.eglGetDisplay(EGL10.EGL_DEFAULT_DISPLAY);
+        if (mEglDisplay == EGL10.EGL_NO_DISPLAY) {
+            throw new RuntimeException("eglGetDisplay failed "
+                    + GLUtils.getEGLErrorString(mEgl.eglGetError()));
+        }
+
+        int[] version = new int[2];
+        if (!mEgl.eglInitialize(mEglDisplay, version)) {
+            throw new RuntimeException("eglInitialize failed " +
+                    GLUtils.getEGLErrorString(mEgl.eglGetError()));
+        }
+
+        mEglConfig = chooseEglConfig();
+        if (mEglConfig == null) {
+            throw new RuntimeException("eglConfig not initialized");
+        }
+
+        mEglContext = createContext(mEgl, mEglDisplay, mEglConfig);
+
+        mEglSurface = mEgl.eglCreateWindowSurface(mEglDisplay, mEglConfig, mSurface, null);
+
+        if (mEglSurface == null || mEglSurface == EGL10.EGL_NO_SURFACE) {
+            int error = mEgl.eglGetError();
+            if (error == EGL10.EGL_BAD_NATIVE_WINDOW) {
+                Log.e(TAG, "createWindowSurface returned EGL_BAD_NATIVE_WINDOW.");
+                return;
+            }
+            throw new RuntimeException("createWindowSurface failed "
+                    + GLUtils.getEGLErrorString(error));
+        }
+
+        if (!mEgl.eglMakeCurrent(mEglDisplay, mEglSurface, mEglSurface, mEglContext)) {
+            throw new RuntimeException("eglMakeCurrent failed "
+                    + GLUtils.getEGLErrorString(mEgl.eglGetError()));
+        }
+
+        mGL = mEglContext.getGL();
+    }
+
+
+    EGLContext createContext(EGL10 egl, EGLDisplay eglDisplay, EGLConfig eglConfig) {
+        int[] attrib_list = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL10.EGL_NONE };
+        return egl.eglCreateContext(eglDisplay, eglConfig, EGL10.EGL_NO_CONTEXT, attrib_list);
+    }
+
+    private EGLConfig chooseEglConfig() {
+        int[] configsCount = new int[1];
+        EGLConfig[] configs = new EGLConfig[1];
+        int[] configSpec = getConfig();
+        if (!mEgl.eglChooseConfig(mEglDisplay, configSpec, configs, 1, configsCount)) {
+            throw new IllegalArgumentException("eglChooseConfig failed " +
+                    GLUtils.getEGLErrorString(mEgl.eglGetError()));
+        } else if (configsCount[0] > 0) {
+            return configs[0];
+        }
+        return null;
+    }
+
+    private static int[] getConfig() {
+        return new int[] {
+                EGL10.EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+                EGL10.EGL_RED_SIZE, 8,
+                EGL10.EGL_GREEN_SIZE, 8,
+                EGL10.EGL_BLUE_SIZE, 8,
+                EGL10.EGL_ALPHA_SIZE, 8,
+                EGL10.EGL_DEPTH_SIZE, 0,
+                EGL10.EGL_STENCIL_SIZE, 0,
+                EGL10.EGL_NONE
+        };
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+
+        setInteractive(false);
+
+        mTextureView = new TextureView(this);
+        mTextureView.setSurfaceTextureListener(this);
     }
 
     @Override
     public void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        
-        setFullscreen(true);
         setInteractive(false);
-        
-        gl = new TheySaidIHadToHaveAGLSurfaceView(Colors.this);
-        gl.postDelayed(new Runnable() {
+        setLowProfile(true);
+        setFullscreen(true);
+        setContentView(mTextureView);
+    }
+
+    @Override
+    public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+        LOG("onSurfaceTextureAvailable(%s, %d, %d)", surface, width, height);
+        mSurface = surface;
+
+        mWidth = width;
+        mHeight = height;
+
+        new Thread() {
+            @Override
             public void run() {
-                Colors.this.setContentView(gl);
+                Looper.prepare();
+    
+                mChoreographer = Choreographer.getInstance();
+                mChoreographer.postFrameCallback(mFrameCallback);
+
+                Looper.loop();
             }
-        }, 1000);
+        }.start();
+    }
+
+    @Override
+    public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+        LOG("onSurfaceTextureSizeChanged(%s, %d, %d)", surface, width, height);
+        mWidth = width;
+        mHeight = height;
+    }
+
+    @Override
+    public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+        LOG("onSurfaceTextureDestroyed(%s)", surface);
+        return false;
+    }
+
+    @Override
+    public void onSurfaceTextureUpdated(SurfaceTexture surface) {
+        LOG("onSurfaceTextureUpdated(%s)", surface);
+    }
+
+    @Override
+    public void finish() {
+        mStop = true;
+        finishGL();
+        super.finish();
     }
 }
