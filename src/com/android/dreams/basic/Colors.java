@@ -33,7 +33,7 @@ public class Colors extends DreamService implements TextureView.SurfaceTextureLi
     static final String TAG = Colors.class.getSimpleName();
     static final boolean DEBUG = false;
 
-    public static final void LOG(String fmt, Object... args) {
+    public static void LOG(String fmt, Object... args) {
         if (!DEBUG) return;
         Log.v(TAG, String.format(fmt, args));
     }
@@ -114,9 +114,17 @@ public class Colors extends DreamService implements TextureView.SurfaceTextureLi
                     mRenderer.stop();
                     mRenderer = null;
                 }
+                mRendererHandlerThread.quit();
             }
         });
-        return false;
+
+        try {
+            mRendererHandlerThread.join();
+        } catch (InterruptedException e) {
+            LOG("Error while waiting for renderer", e);
+        }
+
+        return true;
     }
 
     @Override
