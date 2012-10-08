@@ -27,7 +27,6 @@ import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.egl.EGLContext;
 import javax.microedition.khronos.egl.EGLDisplay;
 import javax.microedition.khronos.egl.EGLSurface;
-import javax.microedition.khronos.opengles.GL;
 
 import android.opengl.EGL14;
 import android.opengl.GLUtils;
@@ -50,7 +49,7 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
     static final String TAG = ColorsGLRenderer.class.getSimpleName();
     static final boolean DEBUG = false;
 
-    private static final void LOG(String fmt, Object... args) {
+    private static void LOG(String fmt, Object... args) {
         if (!DEBUG) return;
         Log.v(TAG, String.format(fmt, args));
     }
@@ -68,10 +67,8 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
     // It's so easy to use OpenGLES 2.0!
     private EGL10 mEgl;
     private EGLDisplay mEglDisplay;
-    private EGLConfig mEglConfig;
     private EGLContext mEglContext;
     private EGLSurface mEglSurface;
-    private GL mGL;
 
     public ColorsGLRenderer(SurfaceTexture surface, int width, int height) {
         mSurface = surface;
@@ -119,8 +116,7 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
         glViewport(0, 0, mWidth, mHeight);
 
         if (DEBUG) {
-            final long t2 = frameTimeNanos;
-            final long dt = t2 - mLastFrameTime;
+            final long dt = frameTimeNanos - mLastFrameTime;
             final int fps = (int) (1e9f / dt);
             if (0 == (mFrameNum % 10)) {
                 LOG("frame %d fps=%d", mFrameNum, fps);
@@ -128,7 +124,7 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
             if (fps < 40) {
                 LOG("JANK! (%d ms)", dt);
             }
-            mLastFrameTime = t2;
+            mLastFrameTime = frameTimeNanos;
         }
 
         glClear(GL_COLOR_BUFFER_BIT);
@@ -170,14 +166,14 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
                     GLUtils.getEGLErrorString(mEgl.eglGetError()));
         }
 
-        mEglConfig = chooseEglConfig();
-        if (mEglConfig == null) {
+        EGLConfig eglConfig = chooseEglConfig();
+        if (eglConfig == null) {
             throw new RuntimeException("eglConfig not initialized");
         }
 
-        mEglContext = createContext(mEgl, mEglDisplay, mEglConfig);
+        mEglContext = createContext(mEgl, mEglDisplay, eglConfig);
 
-        mEglSurface = mEgl.eglCreateWindowSurface(mEglDisplay, mEglConfig, mSurface, null);
+        mEglSurface = mEgl.eglCreateWindowSurface(mEglDisplay, eglConfig, mSurface, null);
 
         if (mEglSurface == null || mEglSurface == EGL10.EGL_NO_SURFACE) {
             int error = mEgl.eglGetError();
@@ -193,8 +189,6 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
             throw new RuntimeException("eglMakeCurrent failed "
                     + GLUtils.getEGLErrorString(mEgl.eglGetError()));
         }
-
-        mGL = mEglContext.getGL();
     }
 
     private void finishGL() {
@@ -202,7 +196,7 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
         mEgl.eglDestroySurface(mEglDisplay, mEglSurface);
     }
 
-    private EGLContext createContext(EGL10 egl, EGLDisplay eglDisplay, EGLConfig eglConfig) {
+    private static EGLContext createContext(EGL10 egl, EGLDisplay eglDisplay, EGLConfig eglConfig) {
         int[] attrib_list = { EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL10.EGL_NONE };
         return egl.eglCreateContext(eglDisplay, eglConfig, EGL10.EGL_NO_CONTEXT, attrib_list);
     }
@@ -226,7 +220,7 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
                 EGL10.EGL_RED_SIZE, 8,
                 EGL10.EGL_GREEN_SIZE, 8,
                 EGL10.EGL_BLUE_SIZE, 8,
-                EGL10.EGL_ALPHA_SIZE, 8,
+                EGL10.EGL_ALPHA_SIZE, 0,
                 EGL10.EGL_DEPTH_SIZE, 0,
                 EGL10.EGL_STENCIL_SIZE, 0,
                 EGL10.EGL_NONE
@@ -356,7 +350,7 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
         private final int colorStride = COLOR_PLANES_PER_VERTEX * 4; // bytes per vertex
 
         // Set color with red, green, blue and alpha (opacity) values
-        float color[] = { 0.63671875f, 0.76953125f, 0.22265625f, 1.0f };
+        // float color[] = { 0.63671875f, 0.76953125f, 0.22265625f, 1.0f };
 
         public Square() {
             for (int i=0; i<vertexCount; i++) {
