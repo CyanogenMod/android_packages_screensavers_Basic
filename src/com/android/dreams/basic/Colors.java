@@ -65,6 +65,7 @@ public class Colors extends DreamService implements TextureView.SurfaceTextureLi
 
     @Override
     public void onAttachedToWindow() {
+        super.onAttachedToWindow();
         setInteractive(false);
         setLowProfile(true);
         setFullscreen(true);
