@@ -15,7 +15,7 @@
 -->
 <resources>
     <!-- Name of the package of basic screensavers, shown in Settings > Apps. [CHAR LIMIT=40] -->
-    <string name="app_name">Basic Sleep Mode Apps</string>
+    <string name="app_name">Basic Daydreams</string>
 
     <!-- Name of the digital kaleidoscope screensaver. [CHAR LIMIT=40] -->
     <string name="color_dream_name">Colors</string>

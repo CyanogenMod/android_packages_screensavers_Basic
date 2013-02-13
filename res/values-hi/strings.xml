@@ -16,6 +16,6 @@
 
 <resources xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
-    <string name="app_name" msgid="3499001493003480920">"मूलभूत निष्क्रिय मोड एप्लिकेशन"</string>
+    <string name="app_name" msgid="6121278918841215202">"बेसिक डेड्रीम्स"</string>
     <string name="color_dream_name" msgid="9063813186991472050">"रंग"</string>
 </resources>
