@@ -15,5 +15,6 @@
      limitations under the License.
 -->
 <resources>
+  <string name="app_name">Einfach Dagesdreem</string>
   <string name="color_dream_name">Faarwen</string>
 </resources>
