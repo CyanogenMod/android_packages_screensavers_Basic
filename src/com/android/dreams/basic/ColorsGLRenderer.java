@@ -93,6 +93,15 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
         finishGL();
     }
 
+    public void pause() {
+        mChoreographer.removeFrameCallback(this);
+    }
+
+    public void resume() {
+        mChoreographer.removeFrameCallback(this);
+        mChoreographer.postFrameCallback(this);
+    }
+
     public void setSize(int width, int height) {
         mWidth = width;
         mHeight = height;
