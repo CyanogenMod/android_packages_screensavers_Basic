@@ -54,6 +54,8 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
         Log.v(TAG, String.format(fmt, args));
     }
 
+    private static final float DEFAULT_PERIOD = 1 / 4000f;
+
     private final SurfaceTexture mSurface;
     private int mWidth;
     private int mHeight;
@@ -63,6 +65,7 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
     private Square mSquare;
     private long mLastFrameTime;
     private int mFrameNum = 0;
+    private float mPeriod;
 
     // It's so easy to use OpenGLES 2.0!
     private EGL10 mEgl;
@@ -71,16 +74,21 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
     private EGLSurface mEglSurface;
 
     public ColorsGLRenderer(SurfaceTexture surface, int width, int height) {
+        this(surface, width, height, DEFAULT_PERIOD);
+    }
+
+    public ColorsGLRenderer(SurfaceTexture surface, int width, int height, float period) {
         mSurface = surface;
         mWidth = width;
         mHeight = height;
+        mPeriod = period;
 
         mChoreographer = Choreographer.getInstance();
     }
 
     public void start() {
         initGL();
-        mSquare = new Square();
+        mSquare = new Square(mPeriod);
 
         mFrameNum = 0;
         mChoreographer.postFrameCallback(this);
@@ -91,6 +99,15 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
 
         mSquare = null;
         finishGL();
+    }
+
+    public void pause() {
+        mChoreographer.removeFrameCallback(this);
+    }
+
+    public void resume() {
+        mChoreographer.removeFrameCallback(this);
+        mChoreographer.postFrameCallback(this);
     }
 
     public void setSize(int width, int height) {
@@ -349,10 +366,12 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
         final int COLOR_PLANES_PER_VERTEX = 4;
         private final int colorStride = COLOR_PLANES_PER_VERTEX * 4; // bytes per vertex
 
+        private float period;
+
         // Set color with red, green, blue and alpha (opacity) values
         // float color[] = { 0.63671875f, 0.76953125f, 0.22265625f, 1.0f };
 
-        public Square() {
+        public Square(float period) {
             for (int i=0; i<vertexCount; i++) {
                 cornerFrequencies[i] = 1f + (float)(Math.random() * 5);
             }
@@ -401,6 +420,7 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
             checkGlError("glGetAttribLocation(a_color)");
             glEnableVertexAttribArray(mColorHandle);
             checkGlError("glEnableVertexAttribArray");
+            this.period = period;
         }
 
         final float[] _tmphsv = new float[3];
@@ -408,7 +428,7 @@ final class ColorsGLRenderer implements Choreographer.FrameCallback {
             // same thing for colors
             long now = SystemClock.uptimeMillis();
             colorBuffer.clear();
-            final float t = now / 4000f; // set the base period to 4sec
+            final float t = now * period; // set the base period to 4sec
             for(int i=0; i<vertexCount; i++) {
                 final float freq = (float) Math.sin(2 * Math.PI * t / cornerFrequencies[i]);
                 _tmphsv[0] = HUES[(i + cornerRotation) % vertexCount];
