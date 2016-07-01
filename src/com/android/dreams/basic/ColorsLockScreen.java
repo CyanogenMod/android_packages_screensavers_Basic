@@ -146,7 +146,7 @@ public class ColorsLockScreen extends KeyguardExternalViewProviderService {
             });
 
             try {
-                mRendererHandlerThread.join();
+                if (mRendererHandlerThread != null) mRendererHandlerThread.join();
             } catch (InterruptedException e) {
                 LOG("Error while waiting for renderer", e);
             }
