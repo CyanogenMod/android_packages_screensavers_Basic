@@ -16,5 +16,7 @@
 -->
 <resources>
   <!-- Name of the package of basic screensavers, shown in Settings > Apps. [CHAR LIMIT=40] -->
+  <string name="app_name">Curiapantalles básicu</string>
   <!-- Name of the digital kaleidoscope screensaver. [CHAR LIMIT=40] -->
+  <string name="color_dream_name">Colores</string>
 </resources>
